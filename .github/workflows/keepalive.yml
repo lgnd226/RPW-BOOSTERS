@@ -1,0 +1,34 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# RPW BOOSTER — Permanent Keep-Alive (GitHub Actions)
+#
+# Pings the Render API every 5 minutes to prevent free-tier sleep.
+# Render free services sleep after 15 min idle — this keeps it ALWAYS AWAKE.
+# Runs 24/7 for free using GitHub Actions scheduled workflows.
+# ══════════════════════════════════════════════════════════════════════════════
+
+name: Keep Render Alive
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # Every 5 minutes, 24/7
+  workflow_dispatch:          # Also allow manual trigger
+
+jobs:
+  ping:
+    name: Ping RPW Booster API
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake up Render service
+        run: |
+          echo "Pinging https://rpw-booster-api.onrender.com/api/healthz ..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 30 \
+            --retry 2 \
+            --retry-delay 5 \
+            https://rpw-booster-api.onrender.com/api/healthz)
+          echo "HTTP status: $STATUS"
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ Service is alive and healthy"
+          else
+            echo "⚠️  Service returned status $STATUS (may be waking up)"
+          fi
