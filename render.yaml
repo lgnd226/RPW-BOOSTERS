@@ -1,10 +1,16 @@
+# ════════════════════════════════════════════════════════════════════════════
+# RPW BOOSTER — Render Blueprint (render.yaml)
+# Deploy at: https://dashboard.render.com → New → Blueprint
+# Or: https://render.com/deploy?repo=https://github.com/lgnd226/RPW-BOOSTERS
+# ════════════════════════════════════════════════════════════════════════════
+
 services:
   - type: web
     name: rpw-booster-api
     env: node
     region: singapore
     plan: free
-    buildCommand: >
+    buildCommand: |
       npm install -g pnpm@9 &&
       pnpm install --no-frozen-lockfile --config.minimumReleaseAge=0 &&
       python3 -m pip install --break-system-packages curl-cffi requests &&
@@ -14,6 +20,7 @@ services:
       cp -r artifacts/lara-web/dist/public/. artifacts/api-server/dist/public/
     startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs
     healthCheckPath: /api/healthz
+    autoDeploy: true
     envVars:
       - key: PORT
         value: 10000
@@ -25,6 +32,11 @@ services:
           property: connectionString
       - key: SESSION_SECRET
         generateValue: true
+      - key: RENDER_EXTERNAL_URL
+        fromService:
+          type: web
+          name: rpw-booster-api
+          property: host
 
 databases:
   - name: rpw-booster-db
