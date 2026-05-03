@@ -12,7 +12,7 @@ jobs:
 
     env:
       EXPO_NO_TELEMETRY: 1
-      EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL || 'https://rpw-booster-api.onrender.com/api/fb' }}
+      EXPO_PUBLIC_API_URL: https://rpw-booster-api.onrender.com/api/fb
 
     steps:
       - name: Checkout repository
