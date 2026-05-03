@@ -1,10 +1,10 @@
 # ════════════════════════════════════════════════════════════════════════════
-# RPW BOOSTER — Render Blueprint
+# RPW BOOSTER — Render Blueprint (render.yaml)
 #
-# DEPLOY (zero manual input):
+# DEPLOY — fully automatic, zero manual input:
 #   1. https://dashboard.render.com → New → Blueprint
-#   2. Connect: lgnd226/RPW-BOOSTERS  → Apply
-#   Render auto-creates: PostgreSQL DB + Node service + all env vars
+#   2. Connect GitHub repo → lgnd226/RPW-BOOSTERS → Apply
+#   Render auto-provisions: PostgreSQL DB + web service + all env vars
 # ════════════════════════════════════════════════════════════════════════════
 
 databases:
@@ -16,14 +16,28 @@ databases:
 services:
   - type: web
     name: rpw-booster-api
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
+    env: node
     region: singapore
     plan: free
     healthCheckPath: /api/healthz
     autoDeploy: true
+    buildCommand: >-
+      pip3 install --break-system-packages --quiet curl_cffi requests &&
+      npm install -g pnpm@9 &&
+      sed -i 's/minimumReleaseAge: [0-9]*/minimumReleaseAge: 0/' pnpm-workspace.yaml &&
+      pnpm install --no-frozen-lockfile --store-dir /tmp/pnpm-store &&
+      BASE_PATH=/ pnpm --filter @workspace/lara-web run build &&
+      pnpm --filter @workspace/api-server run build &&
+      mkdir -p dist public &&
+      cp -r artifacts/api-server/dist/. dist/ &&
+      cp    artifacts/api-server/fb_helper.py fb_helper.py &&
+      cp -r artifacts/lara-web/dist/public/. public/
+    startCommand: node --enable-source-maps dist/index.mjs
     envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
       - key: DATABASE_URL
         fromDatabase:
           name: rpw-booster-db
