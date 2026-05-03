@@ -1,19 +1,24 @@
 # ════════════════════════════════════════════════════════════════════════════
-# RPW BOOSTER — Render Blueprint (render.yaml)
+# RPW BOOSTER — Render Blueprint
 #
-# HOW TO DEPLOY (fully automatic, no manual input):
-#   1. Go to https://dashboard.render.com
-#   2. Click New → Blueprint
-#   3. Connect repo: lgnd226/RPW-BOOSTERS
-#   4. Click "Apply" — Render auto-creates DB + service + all env vars
-#   5. Wait ~5 min for Docker build → live at rpw-booster-api.onrender.com
+# DEPLOY (zero manual input):
+#   1. https://dashboard.render.com → New → Blueprint
+#   2. Connect: lgnd226/RPW-BOOSTERS  → Apply
+#   Render auto-creates: PostgreSQL DB + Node service + all env vars
 # ════════════════════════════════════════════════════════════════════════════
+
+databases:
+  - name: rpw-booster-db
+    databaseName: rpwbooster
+    plan: free
+    region: singapore
 
 services:
   - type: web
     name: rpw-booster-api
-    env: docker
+    runtime: docker
     dockerfilePath: ./Dockerfile
+    dockerContext: .
     region: singapore
     plan: free
     healthCheckPath: /api/healthz
@@ -25,10 +30,3 @@ services:
           property: connectionString
       - key: SESSION_SECRET
         generateValue: true
-      # Render auto-sets RENDER_EXTERNAL_URL — keep-alive uses it to self-ping
-
-databases:
-  - name: rpw-booster-db
-    databaseName: rpwbooster
-    plan: free
-    region: singapore
