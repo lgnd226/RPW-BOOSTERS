@@ -1,42 +1,31 @@
 # ════════════════════════════════════════════════════════════════════════════
 # RPW BOOSTER — Render Blueprint (render.yaml)
-# Deploy at: https://dashboard.render.com → New → Blueprint
-# Or: https://render.com/deploy?repo=https://github.com/lgnd226/RPW-BOOSTERS
+#
+# HOW TO DEPLOY (fully automatic, no manual input):
+#   1. Go to https://dashboard.render.com
+#   2. Click New → Blueprint
+#   3. Connect repo: lgnd226/RPW-BOOSTERS
+#   4. Click "Apply" — Render auto-creates DB + service + all env vars
+#   5. Wait ~5 min for Docker build → live at rpw-booster-api.onrender.com
 # ════════════════════════════════════════════════════════════════════════════
 
 services:
   - type: web
     name: rpw-booster-api
-    env: node
+    env: docker
+    dockerfilePath: ./Dockerfile
     region: singapore
     plan: free
-    buildCommand: |
-      npm install -g pnpm@9 &&
-      pnpm install --no-frozen-lockfile --config.minimumReleaseAge=0 &&
-      python3 -m pip install --break-system-packages curl-cffi requests &&
-      BASE_PATH=/ pnpm --filter @workspace/lara-web run build &&
-      pnpm --filter @workspace/api-server run build &&
-      mkdir -p artifacts/api-server/dist/public &&
-      cp -r artifacts/lara-web/dist/public/. artifacts/api-server/dist/public/
-    startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs
     healthCheckPath: /api/healthz
     autoDeploy: true
     envVars:
-      - key: PORT
-        value: 10000
-      - key: NODE_ENV
-        value: production
       - key: DATABASE_URL
         fromDatabase:
           name: rpw-booster-db
           property: connectionString
       - key: SESSION_SECRET
         generateValue: true
-      - key: RENDER_EXTERNAL_URL
-        fromService:
-          type: web
-          name: rpw-booster-api
-          property: host
+      # Render auto-sets RENDER_EXTERNAL_URL — keep-alive uses it to self-ping
 
 databases:
   - name: rpw-booster-db
