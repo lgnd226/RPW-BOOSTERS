@@ -10,7 +10,19 @@ import { db, fbAccountsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const HELPER_PATH = path.resolve(__dirname, "../fb_helper.py");
+
+// Resolve fb_helper.py — works in both dev (src/) and prod (dist/) layouts
+const HELPER_PATH = (() => {
+  // Try dist/../fb_helper.py first (production bundle), then fallback to src/../../fb_helper.py
+  const candidates = [
+    path.resolve(__dirname, "../fb_helper.py"),
+    path.resolve(__dirname, "../../fb_helper.py"),
+    path.resolve(process.cwd(), "artifacts/api-server/fb_helper.py"),
+    path.resolve(process.cwd(), "fb_helper.py"),
+  ];
+  // Return first that should exist; spawn will fail naturally if none do
+  return candidates[0];
+})();
 
 export interface FbProfile {
   uid: string;
@@ -165,8 +177,13 @@ export async function guardEmail(email: string, password: string, enable: boolea
 }
 
 // ── Database account management ───────────────────────────────────────────────
+// All DB functions gracefully no-op when DATABASE_URL is not set (db === null).
 
 export async function saveAccount(uid: string, name: string, avatar: string, cookie: string): Promise<void> {
+  if (!db) {
+    console.warn("[fb] saveAccount: no database — skipping (set DATABASE_URL to enable)");
+    return;
+  }
   await db.insert(fbAccountsTable).values({ uid, name, avatar, cookie })
     .onConflictDoUpdate({
       target: fbAccountsTable.uid,
@@ -175,6 +192,7 @@ export async function saveAccount(uid: string, name: string, avatar: string, coo
 }
 
 export async function listAccounts(): Promise<FbAccount[]> {
+  if (!db) return [];
   return db.select({
     id: fbAccountsTable.id,
     uid: fbAccountsTable.uid,
@@ -187,10 +205,12 @@ export async function listAccounts(): Promise<FbAccount[]> {
 }
 
 export async function toggleAccount(uid: string, active: boolean): Promise<void> {
+  if (!db) return;
   await db.update(fbAccountsTable).set({ active }).where(eq(fbAccountsTable.uid, uid));
 }
 
 export async function getActiveCookies(): Promise<string[]> {
+  if (!db) return [];
   const rows = await db.select({ cookie: fbAccountsTable.cookie })
     .from(fbAccountsTable)
     .where(eq(fbAccountsTable.active, true));
@@ -228,7 +248,9 @@ export async function reactAll(postUrl: string, reactionType: string): Promise<F
   if (!cookies.length) {
     return {
       success: false,
-      message: "No saved accounts found. Login with at least one cookie first.",
+      message: db
+        ? "No saved accounts found. Login with at least one cookie first."
+        : "Database not connected — bulk boost requires DATABASE_URL. Single-cookie mode still works.",
       logs: [],
       total: 0,
       succeeded: 0,
@@ -252,7 +274,9 @@ export async function commentAll(postUrl: string, comments: string[], count: num
   if (!cookies.length) {
     return {
       success: false,
-      message: "No saved accounts found. Login first to save accounts.",
+      message: db
+        ? "No saved accounts found. Login first to save accounts."
+        : "Database not connected — bulk comment requires DATABASE_URL. Single-cookie mode still works.",
       logs: [],
       total: 0,
       succeeded: 0,
