@@ -1,0 +1,157 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build Android APK (arm64-v8a)
+    runs-on: ubuntu-latest
+
+    env:
+      EXPO_NO_TELEMETRY: 1
+      EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL || 'https://rpw-booster-api.onrender.com/api/fb' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install workspace dependencies
+        run: pnpm install --no-frozen-lockfile --config.minimumReleaseAge=0
+
+      - name: Expo Prebuild (generate Android native project)
+        working-directory: artifacts/rpw-mobile
+        run: pnpm exec expo prebuild --platform android --no-install --clean
+
+      - name: Optimize build.gradle (arm64-v8a only via splits + R8 minify = smaller APK)
+        working-directory: artifacts/rpw-mobile
+        run: |
+          python3 - << 'PYEOF'
+          import re
+
+          path = "android/app/build.gradle"
+          with open(path, "r") as f:
+              c = f.read()
+
+          # Use ONLY splits (not abiFilters) — using both causes Gradle conflict
+          splits_block = """
+              splits {
+                  abi {
+                      enable true
+                      reset()
+                      include "arm64-v8a"
+                      universalApk false
+                  }
+              }
+          """
+          if "splits {" not in c:
+              c = c.replace("    buildTypes {", splits_block + "    buildTypes {", 1)
+
+          # Remove any ndk abiFilters block that conflicts with splits
+          # (expo prebuild sometimes adds it; it conflicts with splits)
+          c = re.sub(r'\n?\s*ndk\s*\{[^}]*abiFilters[^}]*\}', '', c)
+
+          c = re.sub(r'minifyEnabled\s+false', 'minifyEnabled true', c)
+
+          with open(path, "w") as f:
+              f.write(c)
+          print("build.gradle patched: arm64-v8a ABI split (splits only, no abiFilters conflict) + R8 minify")
+          PYEOF
+
+      - name: Make Gradlew executable
+        working-directory: artifacts/rpw-mobile/android
+        run: chmod +x gradlew
+
+      - name: Build arm64-v8a Debug APK
+        working-directory: artifacts/rpw-mobile/android
+        run: ./gradlew app:assembleDebug --no-daemon -x lint
+        env:
+          GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m'
+
+      - name: Show APK size
+        run: |
+          APK=$(find artifacts/rpw-mobile/android/app/build/outputs/apk/debug -name "*.apk" | head -1)
+          echo "=== APK Size ==="
+          ls -lh "$APK"
+          SIZE=$(du -sh "$APK" | cut -f1)
+          echo "SIZE=$SIZE" >> $GITHUB_ENV
+
+      - name: Upload Debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RPW-BOOSTER-arm64-debug-${{ github.sha }}
+          path: artifacts/rpw-mobile/android/app/build/outputs/apk/debug/
+          retention-days: 90
+
+      - name: Build arm64-v8a Release APK (minified, unsigned)
+        working-directory: artifacts/rpw-mobile/android
+        run: ./gradlew app:assembleRelease --no-daemon -x lint
+        continue-on-error: true
+        env:
+          GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m'
+
+      - name: Upload Release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RPW-BOOSTER-arm64-release-unsigned-${{ github.sha }}
+          path: artifacts/rpw-mobile/android/app/build/outputs/apk/release/
+          retention-days: 90
+        continue-on-error: true
+
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: "RPW BOOSTER v1.5.${{ github.run_number }}"
+          body: |
+            ## RPW BOOSTER — Android APK
+
+            **Version:** 1.5.${{ github.run_number }} (Build #${{ github.run_number }})
+            **Architecture:** arm64-v8a (all modern Android phones)
+            **APK Size:** ${{ env.SIZE }}
+            **Commit:** `${{ github.sha }}`
+
+            ---
+
+            ### Download
+            ⬇️ **`app-debug.apk`** — tap the file below to download
+
+            ### Install Instructions
+            1. Download `app-debug.apk`
+            2. On your Android: **Settings → Security → Install unknown apps** → Allow
+            3. Open the downloaded APK and tap **Install**
+            4. Open **RPW BOOSTER** → paste your Facebook cookie → Login
+
+            ---
+            *Built automatically via GitHub Actions*
+          files: |
+            artifacts/rpw-mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
